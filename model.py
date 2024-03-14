@@ -13,7 +13,7 @@ class SiameseNetwork(nn.Module):
         for param in self.backbone.parameters():
             param.requires_grad = True
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(512,512)
+        self.fc1 = nn.Linear(512, 512)
         self.relu1 = nn.ReLU()
         self.batchnorm1 = nn.BatchNorm1d(512)
         self.fc2 = nn.Linear(512, 256)
@@ -23,15 +23,28 @@ class SiameseNetwork(nn.Module):
         x = self.flatten(x)
         x = self.fc1(x)
         x = self.relu1(x)
-        #x = self.batchnorm1(x)
         x = self.fc2(x)
-        #x = self.relu2(x)
         return x
 
-    def forward(self, img1, img2):
-        output1 = self.forward_once(img1)
-        output2 = self.forward_once(img2)
-        return output1, output2
+    def forward(self, anchor, positive, negative):
+        anchor_output = self.forward_once(anchor)
+        positive_output = self.forward_once(positive)
+        negative_output = self.forward_once(negative)
+        return anchor_output, positive_output, negative_output
+
+
+class TripletLoss(nn.Module):
+    def __init__(self, margin=1.0):
+        super(TripletLoss, self).__init__()
+        self.margin = margin
+
+    def forward(self, anchor, positive, negative):
+        positive_distance = F.pairwise_distance(anchor, positive, keepdim=True)
+        negative_distance = F.pairwise_distance(anchor, negative, keepdim=True)
+        losses = F.relu(positive_distance - negative_distance + self.margin)
+        return losses.mean()
+
+
 
 class ContrastiveLoss(torch.nn.Module):
     """
