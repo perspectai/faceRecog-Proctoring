@@ -129,4 +129,3 @@ if __name__ == '__main__':
     imshow(make_grid(concatenated))
     print(example_batch[2].numpy().reshape(-1))
 
-
