@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.optim import lr_scheduler
 from torchvision import transforms
 from tqdm import tqdm
+import os
 
 # Update the imports to use the TripletNetwork and TripletLoss
 from model import SiameseNetwork, TripletLoss  # Adjust this line based on your actual implementation
@@ -60,30 +61,48 @@ def main():
     transform = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((160, 160), interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.ColorJitter(
+            brightness=0.3,
+            contrast=0.3,
+            saturation=0.3),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomPerspective(distortion_scale=0.3, p=0.5),
+        transforms.RandomRotation(degrees=(0 , 30)),
+        transforms.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5)),
         transforms.ToTensor(),
     ])
     
     train_dataset = FaceRecognitionDataset(root_dir='train_ds', transform=transform)
     test_dataset = FaceRecognitionDataset(root_dir='test_ds', transform=transform)
     
-    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
-    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4)
-    
+    train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=2)
+    test_dataloader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=2)
+
     model = SiameseNetwork(pretrained=True).to(device)
+
+    if os.path.exists('checkpoints') and len(os.listdir('checkpoints')):
+        ckpt_file = os.listdir('checkpoints')[-1]
+        start = int(ckpt_file.split('.')[0].split('_')[-1])
+        model.load_state_dict(torch.load(os.path.join('checkpoints' , ckpt_file), map_location=torch.device(device)))
+        print(f'Found existing checkpoint: checkpoints/{ckpt_file}')
+    else:
+        start = 0
+
+
     criterion = TripletLoss(margin=1.0).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-2)
+    optimizer = optim.Adam(model.parameters(), lr=1e-6)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
     
     n_epochs = 20
     
-    for epoch in range(n_epochs):
+    for epoch in range(start , n_epochs):
         train_loss = train_epoch(train_dataloader, model, criterion, optimizer, device, epoch)
         val_loss = validate_epoch(test_dataloader, model, criterion, device, epoch)
         
         scheduler.step()
         
         print(f'Epoch {epoch+1}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
-        torch.save(model.state_dict(), f'model_epoch_{epoch+1}.pth')
+        torch.save(model.state_dict(), f'checkpoints/model_epoch_{epoch+1}.pth')
 
 if __name__ == '__main__':
     main()
