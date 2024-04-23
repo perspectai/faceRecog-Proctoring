@@ -5,12 +5,46 @@ from torch.utils.data import DataLoader
 import torch.nn as nn
 from torch.optim import lr_scheduler
 from torchvision import transforms
+import numpy as np
 from tqdm import tqdm
 import os
-
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report, roc_curve, auc
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import label_binarize
+from itertools import cycle
 # Update the imports to use the TripletNetwork and TripletLoss
 from model import SiameseNetwork, TripletLoss  # Adjust this line based on your actual implementation
 from dataset import FaceRecognitionDataset
+
+def plot_confusion_matrix(cm, classes, title='Confusion Matrix', cmap=plt.cm.Blues):
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = 'd'
+    thresh = cm.max() / 2.
+    for i, j in np.ndindex(cm.shape):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.tight_layout()
+
+def visualize_embeddings(embeddings, targets, title='t-SNE Embeddings Visualization'):
+    tsne = TSNE(n_components=2, verbose=1, perplexity=40, n_iter=300)
+    tsne_results = tsne.fit_transform(embeddings)
+
+    plt.figure(figsize=(10, 10))
+    scatter = plt.scatter(tsne_results[:,0], tsne_results[:,1], c=targets, cmap='viridis', label=targets)
+    plt.colorbar(scatter)
+    plt.title(title)
+    plt.show()
 
 def train_epoch(train_dataloader, model, criterion, optimizer, device, epoch):
     model.train()
@@ -38,6 +72,8 @@ def train_epoch(train_dataloader, model, criterion, optimizer, device, epoch):
 def validate_epoch(test_dataloader, model, criterion, device, epoch):
     model.eval()
     val_loss = 0
+    positive_distances = []
+    negative_distances = []
     
     batch_iterator = tqdm(test_dataloader, desc=f'Epoch {epoch:02d}/ Validation', leave=False, total=len(test_dataloader))
     
@@ -49,9 +85,27 @@ def validate_epoch(test_dataloader, model, criterion, device, epoch):
             loss = criterion(anchor_output, positive_output, negative_output)
             
             val_loss += loss.item()
+            # Compute distances for positive and negative pairs
+            positive_distances.append(torch.nn.functional.pairwise_distance(anchor_output, positive_output).cpu().numpy())
+            negative_distances.append(torch.nn.functional.pairwise_distance(anchor_output, negative_output).cpu().numpy())
             batch_iterator.set_description(f'Epoch {epoch:02d}/ Validation. Loss: {loss.item():.4f}')
 
     avg_val_loss = val_loss / len(test_dataloader)
+
+    # Flatten the list of numpy arrays
+    positive_distances = np.concatenate(positive_distances)
+    negative_distances = np.concatenate(negative_distances)
+
+    # Plot Histogram of Distances
+    plt.figure(figsize=(10, 5))
+    plt.hist(positive_distances, bins=30, alpha=0.7, label='Positive Pairs')
+    plt.hist(negative_distances, bins=30, alpha=0.7, label='Negative Pairs')
+    plt.title('Distribution of distances')
+    plt.xlabel('Distance')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.show()
+
     return avg_val_loss
 
 def main():
